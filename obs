@@ -141,7 +141,7 @@ def make_gitinfo(tmpdir, prefix):
     return os.path.join(prefix, '.git_info')
 
 
-def mkarchive(projdir, projname, gitinfo=False, revision=""):
+def mkarchive(projdir, projname, gitinfo=False, revision="", localbuild=False):
     rc = 0
     archivename = resolve_archive_name(projdir, projname)
     where = os.path.join(projdir, archivename)
@@ -162,8 +162,20 @@ def mkarchive(projdir, projname, gitinfo=False, revision=""):
             tmpdir = tempfile.mkdtemp()
             atexit.register(lambda: shutil.rmtree(tmpdir, ignore_errors=True))
         tarfile = os.path.join(tmpdir, prefix + '.tar')
-        rc = do_call(['git', 'archive', '--format=tar', '--prefix=%s/' % (prefix),
-                 '-o', tarfile, revision or 'HEAD'])
+        if localbuild:
+            # copy all stuff to temp directory, to keep the same file structure
+            #  as after git archive command:
+            do_call(['rm', '-fr', projname])
+            do_call(['mkdir', projname])
+            do_call(['ls'])
+            do_call(['cp', '-R', '.', projname])
+            # create a tar archive, the same as git archive command do:
+            rc = do_call(['tar', '-cvf', tarfile, projname])
+            # clean up:
+            do_call(['rm', '-fr', projname])
+        else:
+            rc = do_call(['git', 'archive', '--format=tar', '--prefix=%s/' % (prefix),
+                     '-o', tarfile, revision or 'HEAD'])
         if gitinfo:
             gitinfo_file = make_gitinfo(tmpdir, prefix)
             cwd = os.getcwd()
@@ -229,7 +241,7 @@ class Commands:
         d = os.path.join(self.buildservice, self.projname)
         self._checkdir(d)
         return mkarchive(d, self.projname,
-            gitinfo=self.args.gitinfo, revision=self.args.revision)
+            gitinfo=self.args.gitinfo, revision=self.args.revision, localbuild=self.args.localbuild)
 
     def _cd_prj(self):
         self._setup_projname()
@@ -378,6 +390,8 @@ def main():
                         help="Use this message for checkin to the OBS server")
     parser.add_argument('-r', '--revision', dest='revision',
                         help="Archive this revision instead of HEAD/tip")
+    parser.add_argument('-l', '--local-build', dest='localbuild', action='store_true',
+                        help="Build the software by using the working local copy")
     parser.add_argument('cmd', metavar='cmd', type=str, default="",
                         help='|'.join(ls_commands()))
     parser.add_argument('args', metavar='args', nargs='*', help='command arguments')
